@@ -1,39 +1,51 @@
 <Query Kind="Program">
-  <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Adaptive.ReactiveTrader.Client.Domain.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Adaptive.ReactiveTrader.Client.Domain.dll</Reference>
+  <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Adaptive.ReactiveTrader.Client.DomainPortable.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Adaptive.ReactiveTrader.Client.DomainPortable.dll</Reference>
   <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Adaptive.ReactiveTrader.Shared.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Adaptive.ReactiveTrader.Shared.dll</Reference>
-  <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\log4net.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\log4net.dll</Reference>
+  <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\HdrHistogram.NET.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\HdrHistogram.NET.dll</Reference>
   <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Microsoft.AspNet.SignalR.Client.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Microsoft.AspNet.SignalR.Client.dll</Reference>
   <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Newtonsoft.Json.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\Newtonsoft.Json.dll</Reference>
+  <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Net.Http.Extensions.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Net.Http.Extensions.dll</Reference>
+  <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Net.Http.Primitives.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Net.Http.Primitives.dll</Reference>
   <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Reactive.Core.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Reactive.Core.dll</Reference>
   <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Reactive.Interfaces.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Reactive.Interfaces.dll</Reference>
   <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Reactive.Linq.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Reactive.Linq.dll</Reference>
   <Reference Relative="Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Reactive.PlatformServices.dll">&lt;MyDocuments&gt;\GitHub\ReactiveTrader\src\Adaptive.ReactiveTrader.Client.Domain\bin\Debug\System.Reactive.PlatformServices.dll</Reference>
   <Namespace>Adaptive.ReactiveTrader.Client.Domain</Namespace>
+  <Namespace>Adaptive.ReactiveTrader.Client.Domain.Models</Namespace>
   <Namespace>System</Namespace>
   <Namespace>System.Reactive</Namespace>
   <Namespace>System.Reactive.Linq</Namespace>
-  <Namespace>Adaptive.ReactiveTrader.Client.Domain.Models</Namespace>
 </Query>
 
 void Main()
 {
 	var api = new ReactiveTrader();
+	
+	//Initialize
 	api.Initialize("Trader1", new []{"http://localhost:8080"});
 	
-	api.ConnectionStatusStream.DumpLive("ConnectionStatus");
 	
-	var eurusd = api.ReferenceData
-					.GetCurrencyPairsStream()
-					.SelectMany(_ => _)
-					.Where(cp => cp.CurrencyPair.Symbol == "EURUSD")
-					.SelectMany(cp => cp.CurrencyPair.PriceStream);
+	//Dump connection status
+	api.ConnectionStatusStream.DumpLive("Conn");
 	
-	eurusd.Select((p,i)=> "price" + i + ":" + p.ToString()).DumpLive("EUR/USD");
+	//Get EUR/USD price stream
+	var eurusd = api.ReferenceData.GetCurrencyPairsStream()
+					.SelectMany(ccyList=>ccyList)
+					.Where(ccy=>ccy.CurrencyPair.Symbol == "EURUSD")
+					.SelectMany(ccy=>ccy.CurrencyPair.PriceStream)
+				 	.Publish()
+					.RefCount();
+	
+	
+	//Dump prices to live
+	eurusd.DumpLive("Prices");
 
-	var execution = eurusd.Skip(10)
-						  .Take(1)
-						  .SelectMany(
-						  	price => price.Ask.ExecuteRequest(10000, "EUR"));
-		
-	execution.DumpLive("Execution");				 
+	//Execute
+	var maxBidRate = 1.3625m;
+	var order = eurusd.Where(p=>p.Bid.Rate < maxBidRate)
+					.Take(1)
+					.SelectMany(price=>price.Bid.ExecuteRequest(100000, "EUR"))
+					.Select(trade=> trade.Update.TradeStatus);
+				
+	order.DumpLive("Order");					
 }
