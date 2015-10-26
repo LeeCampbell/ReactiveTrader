@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace Adaptive.ReactiveTrader.Client.Domain.Instrumentation
+﻿namespace Adaptive.ReactiveTrader.Client.Domain.Instrumentation
 {
     public class Statistics
     {
